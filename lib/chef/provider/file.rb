@@ -216,7 +216,6 @@ class Chef
           description << diff_current_from_content(@new_resource.content) 
 
           converge_by(description) do
-            Chef::Log.info("entered create")
             ::File.open(@new_resource.path, "w+") {|f| f.write @new_resource.content }
             access_controls.set_all
             Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
