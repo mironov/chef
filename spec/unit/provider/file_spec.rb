@@ -227,8 +227,10 @@ describe Chef::Provider::File do
   it "should delete the file if it exists and is writable on action_delete" do
     @provider.new_resource.stub!(:path).and_return(File.join(Dir.tmpdir, "monkeyfoo"))
     @provider.stub!(:backup).and_return(true)
-    File.should_receive("exists?").exactly(2).times.with(@provider.new_resource.path).and_return(true)
+    File.should_receive("exists?").exactly(3).times.with(@provider.new_resource.path).and_return(true)
     File.should_receive("writable?").with(@provider.new_resource.path).and_return(true)
+    io = StringIO.new
+    File.should_receive(:open).with(@provider.new_resource.path, "rb").and_yield(io)
     File.should_receive(:delete).with(@provider.new_resource.path).and_return(true)
     @provider.run_action(:delete)
     @resource.should be_updated_by_last_action
@@ -237,7 +239,7 @@ describe Chef::Provider::File do
   it "should not raise an error if it cannot delete the file because it does not exist" do
     @provider.new_resource.stub!(:path).and_return(File.join(Dir.tmpdir, "monkeyfoo"))
     @provider.stub!(:backup).and_return(true)
-    File.should_receive("exists?").exactly(2).times.with(@provider.new_resource.path).and_return(false)
+    File.should_receive("exists?").exactly(3).times.with(@provider.new_resource.path).and_return(false)
     lambda { @provider.run_action(:delete) }.should_not raise_error()
     @resource.should_not be_updated_by_last_action
   end
@@ -345,7 +347,8 @@ describe Chef::Provider::File do
     it "should not call action create if the file exists" do
       @resource.path(File.expand_path(File.join(CHEF_SPEC_DATA, "templates", "seattle.txt")))
       @provider = Chef::Provider::File.new(@resource, @run_context)
-      File.should_not_receive(:open)
+      io = StringIO.new
+      File.should_receive(:open).with(@provider.new_resource.path, "rb").and_yield(io)
       @provider.run_action(:create_if_missing)
       @resource.should_not be_updated_by_last_action
     end

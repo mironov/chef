@@ -54,7 +54,7 @@ class Chef
           if file_already_exists? && content_matches?
             Chef::Log.debug("#{@new_resource} content has not changed.")
             set_all_access_controls
-            update_new_file_state(@new_resource.path)
+            update_new_file_state
           else
             description = []
             action_message = if file_already_exists?
@@ -69,7 +69,7 @@ class Chef
               FileUtils.cp(rendered_template.path, @new_resource.path)
               Chef::Log.info("#{@new_resource} updated content")
               access_controls.set_all!
-              update_new_file_state(@new_resource.path)
+              update_new_file_state
             end
           end
         end

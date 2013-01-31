@@ -131,22 +131,13 @@ class Chef
         @current_resource ||= Chef::Resource::File.new(@new_resource.name)
         @new_resource.path.gsub!(/\\/, "/") # for Windows
         @current_resource.path(@new_resource.path)
-        if !::File.directory?(@new_resource.path)
-          if ::File.exist?(@new_resource.path)
-            if @action != :create_if_missing  
-              @current_resource.checksum(checksum(@new_resource.path))
-            end
-          end
-        end
-        setup_acl
+        update_new_file_state(@current_resource)
 
         @current_resource
       end
 
       def setup_acl
-        return if Chef::Platform.windows?
-        acl_scanner = ScanAccessControl.new(@new_resource, @current_resource)
-        acl_scanner.set_all!
+        update_new_file_state(@current_resource)
       end
 
       def define_resource_requirements
@@ -198,9 +189,11 @@ class Chef
       # if you are using a tempfile before creating, you must
       # override the default with the tempfile, since the 
       # file at @new_resource.path will not be updated on converge
-      def update_new_file_state(path=@new_resource.path)
-        if !::File.directory?(path) 
-          @new_resource.checksum(checksum(path))
+      def update_new_file_state(resource=@new_resource)
+        if resource.respond_to?(:checksum)
+          if ::File.exists?(resource.path) && !::File.directory?(resource.path)
+            resource.checksum(checksum(resource.path))
+          end
         end
 
         if Chef::Platform.windows?
@@ -210,7 +203,7 @@ class Chef
           return
         end
 
-        acl_scanner = ScanAccessControl.new(@new_resource, @new_resource)
+        acl_scanner = ScanAccessControl.new(@new_resource, resource)
         acl_scanner.set_all!
       end
 
