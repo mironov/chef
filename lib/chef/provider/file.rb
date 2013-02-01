@@ -172,20 +172,6 @@ class Chef
         checksum(@current_resource.path) == new_resource_content_checksum
       end
 
-      # Set the content of the file, assuming it is not set correctly already.
-      def set_content
-        unless compare_content
-          description = []
-          description << "update content in file #{@new_resource.path} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(new_resource_content_checksum)}"
-          description << diff_current_from_content(@new_resource.content) 
-          converge_by(description) do
-            backup @new_resource.path if ::File.exists?(@new_resource.path)
-            ::File.open(@new_resource.path, "w") {|f| f.write @new_resource.content }
-            Chef::Log.info("#{@new_resource} contents updated")
-          end
-        end
-      end
-
       # if you are using a tempfile before creating, you must
       # override the default with the tempfile, since the 
       # file at @new_resource.path will not be updated on converge
@@ -207,34 +193,54 @@ class Chef
         acl_scanner.set_all!
       end
 
+      def do_acl_changes
+        converge_by(access_controls.describe_changes) do 
+          access_controls.set_all
+          update_new_file_state
+        end
+      end
+
+      def do_update_content
+        description = []
+        description << "update content in file #{@new_resource.path} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(new_resource_content_checksum)}"
+        description << diff_current_from_content(@new_resource.content) 
+        converge_by(description) do
+          backup @new_resource.path if ::File.exists?(@new_resource.path)
+          ::File.open(@new_resource.path, "w") {|f| f.write @new_resource.content }
+          Chef::Log.info("#{@new_resource} contents updated")
+        end
+      end
+
+      def do_create_file
+        description = []
+        desc = "create new file #{@new_resource.path}"
+        desc << " with content checksum #{short_cksum(new_resource_content_checksum)}" if new_resource.content
+        description << desc
+        description << diff_current_from_content(@new_resource.content) 
+
+        converge_by(description) do
+          ::File.open(@new_resource.path, "w+") {|f| f.write @new_resource.content }
+          Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
+        end
+      end
+
       def action_create
         if !::File.exists?(@new_resource.path)
-          description = []
-          desc = "create new file #{@new_resource.path}"
-          desc << " with content checksum #{short_cksum(new_resource_content_checksum)}" if new_resource.content
-          description << desc
-          description << diff_current_from_content(@new_resource.content) 
-
-          converge_by(description) do
-            ::File.open(@new_resource.path, "w+") {|f| f.write @new_resource.content }
-            access_controls.set_all
-            Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
-            update_new_file_state
-          end
+          do_create_file
+          do_acl_changes
         else
-          set_content unless @new_resource.content.nil?
-          set_all_access_controls
+          unless @new_resource.content.nil?
+            unless compare_content
+              do_update_content
+            end
+          end
+
+          do_acl_changes if access_controls.requires_changes?
         end
       end
 
       def set_all_access_controls
-        if access_controls.requires_changes?
-          converge_by(access_controls.describe_changes) do 
-            access_controls.set_all
-            #Update file state with new access values
-            update_new_file_state
-          end
-        end
+        do_acl_changes if access_controls.requires_changes?
       end
 
       def action_create_if_missing
