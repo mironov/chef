@@ -24,8 +24,6 @@ class Chef
   class Provider
     class CookbookFile < Chef::Provider::File
 
-      include Chef::Mixin::EnforceOwnershipAndPermissions
-
       def whyrun_supported?
         true
       end

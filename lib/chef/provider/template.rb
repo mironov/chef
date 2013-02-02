@@ -28,8 +28,6 @@ class Chef
 
     class Template < Chef::Provider::File
 
-      include Chef::Mixin::EnforceOwnershipAndPermissions
-      include Chef::Mixin::Checksum
       include Chef::Mixin::Template
 
       def load_current_resource
@@ -40,8 +38,8 @@ class Chef
       def define_resource_requirements
         super
 
-        requirements.assert(:create, :create_if_missing) do |a| 
-          a.assertion { ::File::exist?(template_location) } 
+        requirements.assert(:create, :create_if_missing) do |a|
+          a.assertion { ::File::exist?(template_location) }
           a.failure_message "Template source #{template_location} could not be found."
           a.whyrun "Template source #{template_location} does not exist. Assuming it would have been created."
           a.block_action!
