@@ -178,7 +178,9 @@ class Chef
       def update_new_file_state(resource=@new_resource)
         if resource.respond_to?(:checksum)
           if ::File.exists?(resource.path) && !::File.directory?(resource.path)
-            resource.checksum(checksum(resource.path))
+            if @action != :create_if_missing # XXX: don't we break current_resource semantics by skipping this?
+              resource.checksum(checksum(resource.path))
+            end
           end
         end
 
