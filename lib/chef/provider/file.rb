@@ -155,15 +155,11 @@ class Chef
         end
 
         # Make sure the file is deletable if it exists. Otherwise, fail.
-        requirements.assert(:delete) do |a|
-          a.assertion do
-            if ::File.exists?(@new_resource.path)
-              ::File.writable?(@new_resource.path)
-            else
-              true
-            end
+        if ::File.exists?(@new_resource.path)
+          requirements.assert(:delete) do |a|
+            a.assertion { ::File.writable?(@new_resource.path) }
+            a.failure_message(Chef::Exceptions::InsufficientPermissions,"File #{@new_resource.path} exists but is not writable so it cannot be deleted")
           end
-          a.failure_message(Chef::Exceptions::InsufficientPermissions,"File #{@new_resource.path} exists but is not writable so it cannot be deleted")
         end
       end
 
