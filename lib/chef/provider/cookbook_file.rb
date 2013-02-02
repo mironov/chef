@@ -35,25 +35,38 @@ class Chef
         super
       end
 
+      def do_create_file
+        description = []
+        description << "create a new cookbook_file #{@new_resource.path}"
+        description << diff_current(file_cache_location)
+        converge_by(description) do
+          Chef::Log.debug("#{@new_resource} has new contents")
+          backup if ::File.exists?(@new_resource.path)
+          # XXX: deploy_tempfile changes acls on the fly without notifying what it does
+          deploy_tempfile do |tempfile|
+            Chef::Log.debug("#{@new_resource} staging #{file_cache_location} to #{tempfile.path}")
+            tempfile.close
+            FileUtils.cp(file_cache_location, tempfile.path)
+            enforce_tempfile_inheritance(tempfile.path)
+          end
+          update_new_file_state
+          Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
+        end
+      end
+
       def action_create
-        if file_cache_location && content_stale? 
-          description = []
-          description << "create a new cookbook_file #{@new_resource.path}"
-          description << diff_current(file_cache_location)
-          converge_by(description) do
-            Chef::Log.debug("#{@new_resource} has new contents")
-            backup_new_resource
-            deploy_tempfile do |tempfile|
-              Chef::Log.debug("#{@new_resource} staging #{file_cache_location} to #{tempfile.path}")
-              tempfile.close
-              FileUtils.cp(file_cache_location, tempfile.path)
-              enforce_tempfile_inheritance(tempfile.path)              
+        if file_cache_location
+          if ! ::File.exist?(@new_resource.path)
+            do_create_file
+          else
+            if !compare_content
+              do_create_file # XXX: this should be an update file and should notify appropriately
+            else
+              do_acl_changes if access_controls.requires_changes?
             end
-            update_new_file_state
-            Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
           end
         else
-          set_all_access_controls
+          do_acl_changes if access_controls.requires_changes?
         end
       end
 
@@ -69,16 +82,6 @@ class Chef
       # i.e., the cookbook the resource was declared in.
       def resource_cookbook
         @new_resource.cookbook || @new_resource.cookbook_name
-      end
-
-      def backup_new_resource
-        if ::File.exists?(@new_resource.path)
-          backup @new_resource.path
-        end
-      end
-
-      def content_stale?
-        ( ! ::File.exist?(@new_resource.path)) || ( ! compare_content)
       end
 
       protected
@@ -106,8 +109,8 @@ class Chef
           # true
           securable_tempfile.set_dacl(default_dacl, true)
         end
-      end      
-      
+      end
+
     end
   end
 end
