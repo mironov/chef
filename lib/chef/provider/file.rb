@@ -141,7 +141,7 @@ class Chef
       end
 
       def define_resource_requirements
-        # this must be evaluated before whyrun messages are printed
+        # this must be evaluated before whyrun messages are printed ( XXX: smell )
         access_controls.requires_changes?
 
         requirements.assert(:create, :create_if_missing, :touch) do |a|
@@ -227,6 +227,7 @@ class Chef
       end
 
       def action_create
+        # note that file is unique since we may not have any source of content and just manage perms
         if !::File.exists?(@new_resource.path)
           do_create_file
           do_acl_changes
