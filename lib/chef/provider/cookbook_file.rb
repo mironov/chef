@@ -34,9 +34,11 @@ class Chef
       end
 
       def do_create_file
+        diff = DiffService.new(current_resource, file_cache_location)
+        @new_resource.diff(diff.for_new_resource)
         description = []
         description << "create a new cookbook_file #{@new_resource.path}"
-        description << diff_current(file_cache_location)
+        description << diff.to_s
         converge_by(description) do
           Chef::Log.debug("#{@new_resource} has new contents")
           backup if ::File.exists?(@new_resource.path)

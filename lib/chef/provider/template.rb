@@ -54,6 +54,8 @@ class Chef
             set_all_access_controls
             update_new_file_state
           else
+            diff = DiffService.new(@current_resource, rendered_template.path)
+            @new_resource.diff(diff.for_new_resource)
             description = []
             action_message = if file_already_exists?
               "update #{@current_resource} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(@new_resource.checksum)}"
@@ -61,7 +63,7 @@ class Chef
               "create #{@new_resource}"
             end
             description << action_message
-            description << diff_current(rendered_template.path)
+            description << diff.to_s
             converge_by(description) do
               backup
               FileUtils.cp(rendered_template.path, @new_resource.path)
