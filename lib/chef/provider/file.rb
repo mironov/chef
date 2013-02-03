@@ -40,6 +40,8 @@ class Chef
         #@backup_service = BackupService.new(new_resource)
       end
 
+# XXX: did we have a regression, don't see these used anywhere?  no regression tests?
+#
 #      def negative_complement(big)
 #        if big > 1073741823 # Fixnum max
 #          big -= (2**32) # diminished radix wrap to negative
@@ -280,11 +282,11 @@ class Chef
         def initialize(current_resource, path)
           @current_resource = current_resource
           @diff = nil
-          @diff_output = diff_file_against_current(path)
+          @diff_to_string = diff_file_against_current(path)
         end
 
         def to_s
-          @diff_output
+          @diff_to_string
         end
 
         def for_new_resource
@@ -335,6 +337,7 @@ class Chef
             else
               val = result.stdout.split("\n")
               val.delete("\\ No newline at end of file")
+              # XXX: we return the diff here, everything else is an error of one form or another
               @diff = val.join("\\n") unless suppress_resource_reporting
               val
             end
