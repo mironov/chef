@@ -33,11 +33,9 @@ class Chef
       include Chef::Mixin::EnforceOwnershipAndPermissions
       include Chef::Mixin::Checksum
 
-      #attr_accessor :backup_service
 
       def initialize(new_resource, run_context)
         super
-        #@backup_service = BackupService.new(new_resource)
       end
 
 # XXX: did we have a regression, don't see these used anywhere?  no regression tests?
@@ -152,7 +150,7 @@ class Chef
         description << "update content in file #{@new_resource.path} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(new_resource_content_checksum)}"
         description << diff_current_from_content(@new_resource.content)
         converge_by(description) do
-          backup @new_resource.path if ::File.exists?(@new_resource.path)
+          backup @new_resource.path
           ::File.open(@new_resource.path, "w") {|f| f.write @new_resource.content }
           Chef::Log.info("#{@new_resource} contents updated")
         end

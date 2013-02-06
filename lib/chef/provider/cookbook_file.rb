@@ -41,7 +41,7 @@ class Chef
         description << diff.to_s
         converge_by(description) do
           Chef::Log.debug("#{@new_resource} has new contents")
-          backup if ::File.exists?(@new_resource.path)
+          backup
           # XXX: deploy_tempfile changes acls on the fly without notifying what it does
           deploy_tempfile do |tempfile|
             Chef::Log.debug("#{@new_resource} staging #{file_cache_location} to #{tempfile.path}")
