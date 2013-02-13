@@ -33,75 +33,42 @@ class Chef
       include Chef::Mixin::EnforceOwnershipAndPermissions
       include Chef::Mixin::Checksum
 
+      attr_accessor :content_strategy
 
       def initialize(new_resource, run_context)
         super
+        @content_strategy = ContentFromResource.new(new_resource)
       end
 
-# XXX: did we have a regression, don't see these used anywhere?  no regression tests?
-#
-#      def negative_complement(big)
-#        if big > 1073741823 # Fixnum max
-#          big -= (2**32) # diminished radix wrap to negative
-#        end
-#        big
-#      end
-#
-#      def octal_mode(mode)
-#        ((mode.respond_to?(:oct) ? mode.oct : mode.to_i) & 007777)
-#      end
-#
-#      private :negative_complement, :octal_mode
-
-      def diff_current_from_content(new_content)
-        diff = nil
-        Tempfile.open("chef-diff") do |file|
-          file.write new_content
-          file.close
-          diff = DiffService.new(current_resource, file.path)
-          @new_resource.diff( diff.for_new_resource )
-        end
+      def diff_tempfile(file)
+        diff = DiffService.new(current_resource, file.path)
+        @new_resource.diff( diff.for_new_resource )
         diff.to_s
       end
-
 
       def whyrun_supported?
         true
       end
 
       def load_current_resource
-        # Every child should be specifying their own constructor, so this
-        # should only be run in the file case.
+        # Let children resources override constructing the @current_resource
         @current_resource ||= Chef::Resource::File.new(@new_resource.name)
         @new_resource.path.gsub!(/\\/, "/") # for Windows
         @current_resource.path(@new_resource.path)
-        update_new_file_state(@current_resource)
+        load_resource_attributes_from_file(@current_resource)
         @current_resource
       end
 
-      def diff_file_against_current(path)
-        @diff_service.diff_file_against_current(path)
-      end
-
-      def setup_acl
-        update_new_file_state(@current_resource)
-      end
-
       def define_resource_requirements
-        # this must be evaluated before whyrun messages are printed ( XXX: smell )
-        access_controls.requires_changes?
-
+        # Make sure the parent directory exists, otherwise fail.  For why-run assume it would have been created.
         requirements.assert(:create, :create_if_missing, :touch) do |a|
-          # Make sure the parent dir exists, or else fail.
-          # for why run, print a message explaining the potential error.
           parent_directory = ::File.dirname(@new_resource.path)
-
           a.assertion { ::File.directory?(parent_directory) }
           a.failure_message(Chef::Exceptions::EnclosingDirectoryDoesNotExist, "Parent directory #{parent_directory} does not exist.")
           a.whyrun("Assuming directory #{parent_directory} would have been created")
         end
 
-        # Make sure the file is deletable if it exists. Otherwise, fail.
+        # Make sure the file is deletable if it exists, otherwise fail.
         if ::File.exists?(@new_resource.path)
           requirements.assert(:delete) do |a|
             a.assertion { ::File.writable?(@new_resource.path) }
@@ -110,15 +77,10 @@ class Chef
         end
       end
 
-      # Compare the content of a file.  Returns true if they are the same, false if they are not.
-      def compare_content
-        checksum(@current_resource.path) == new_resource_content_checksum
-      end
-
       # if you are using a tempfile before creating, you must
       # override the default with the tempfile, since the
       # file at @new_resource.path will not be updated on converge
-      def update_new_file_state(resource=@new_resource)
+      def load_resource_attributes_from_file(resource)
         if resource.respond_to?(:checksum)
           if ::File.exists?(resource.path) && !::File.directory?(resource.path)
             if @action != :create_if_missing # XXX: don't we break current_resource semantics by skipping this?
@@ -139,54 +101,52 @@ class Chef
       end
 
       def do_acl_changes
-        converge_by(access_controls.describe_changes) do
-          access_controls.set_all
-          update_new_file_state
+        if access_controls.requires_changes?
+          converge_by(access_controls.describe_changes) do
+            access_controls.set_all
+            # update the @new_resource to have the correct new values for reporting (@new_resource == actual "end state" here)
+            load_resource_attributes_from_file(@new_resource)
+          end
         end
       end
 
-      def do_update_content
+      def do_update_file
         description = []
-        description << "update content in file #{@new_resource.path} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(new_resource_content_checksum)}"
-        description << diff_current_from_content(@new_resource.content)
+        description << "update content in file #{@new_resource.path} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(@content_strategy.checksum)}"
+        description << diff_tempfile(@content_strategy.tempfile)
         converge_by(description) do
           backup @new_resource.path
-          ::File.open(@new_resource.path, "w") {|f| f.write @new_resource.content }
-          Chef::Log.info("#{@new_resource} contents updated")
+          tempfile = @content_strategy.tempfile
+          ::File.open(@new_resource.path, "w") {|f| f.write IO.read(tempfile.path) }
+          @content_strategy.cleanup
+          Chef::Log.info("#{@new_resource} updated file #{@new_resource.path}")
         end
       end
 
       def do_create_file
         description = []
-        desc = "create new file #{@new_resource.path}"
-        desc << " with content checksum #{short_cksum(new_resource_content_checksum)}" if new_resource.content
-        description << desc
-        description << diff_current_from_content(@new_resource.content)
-
+        description << "create new file #{@new_resource.path}"
+        description << " with content checksum #{short_cksum(@content_strategy.checksum)}"
+        description << diff_tempfile(@content_strategy.tempfile)
         converge_by(description) do
-          ::File.open(@new_resource.path, "w+") {|f| f.write @new_resource.content }
+          tempfile = @content_strategy.tempfile
+          ::File.open(@new_resource.path, "w") {|f| f.write IO.read(tempfile.path) }
+          @content_strategy.cleanup
           Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
         end
       end
 
       def action_create
-        # note that file is unique since we may not have any source of content and just manage perms
-        if !::File.exists?(@new_resource.path)
-          do_create_file
-          do_acl_changes
-        else
-          unless @new_resource.content.nil?
-            unless compare_content
-              do_update_content
+        if @content_strategy.has_content?
+          if !::File.exists?(@new_resource.path)
+            do_create_file
+          else
+            if @content_strategy.contents_changed?(@current_resource)
+              do_update_file
             end
           end
-
-          do_acl_changes if access_controls.requires_changes?
         end
-      end
-
-      def set_all_access_controls
-        do_acl_changes if access_controls.requires_changes?
+        do_acl_changes
       end
 
       def action_create_if_missing
@@ -264,13 +224,15 @@ class Chef
         checksum.slice(0,6)
       end
 
-      def new_resource_content_checksum
-        @new_resource.content && Digest::SHA2.hexdigest(@new_resource.content)
-      end
-
       class BackupService
       end
+    end
+  end
+end
 
+class Chef
+  class Provider
+    class File
       class DiffService
         include Chef::Mixin::ShellOut
 
@@ -361,3 +323,64 @@ class Chef
     end
   end
 end
+
+class Chef
+  class Provider
+    class File
+      class ContentStrategy
+        def initialize(new_resource)
+          @new_resource = new_resource
+        end
+        def has_content?
+          raise "class must implement has_content!"
+        end
+        def contents_changed?
+          raise "class must implement has_content!"
+        end
+        def tempfile
+          raise "class must implement tempfile!"
+        end
+        def checksum
+          raise "class must implement checksum!"
+        end
+        def cleanup
+          raise "class must implement cleanup!"
+        end
+      end
+
+      class ContentFromCookbookFile < ContentStrategy
+        def has_content?
+        end
+      end
+
+      class ContentFromResource < ContentStrategy
+        include Chef::Mixin::Checksum
+        def has_content?
+          @new_resource.content != nil
+        end
+
+        def tempfile
+          return @tempfile if @tempfile
+
+          @tempfile = Tempfile.open(::File.basename(@new_resource.name))
+          @tempfile.write(@new_resource.content)
+          @tempfile.close
+          @tempfile
+        end
+
+        def contents_changed?(current_resource)
+          checksum != current_resource.checksum
+        end
+
+        def checksum
+          Chef::Digester.checksum_for_file(tempfile.path)
+        end
+
+        def cleanup
+          tempfile.unlink
+        end
+      end
+    end
+  end
+end
+
