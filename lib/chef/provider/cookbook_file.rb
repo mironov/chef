@@ -111,6 +111,10 @@ class Chef
                         end
         end
 
+        def contents_changed?(current_resource)
+          !checksum.nil? && checksum != current_resource.checksum
+        end
+
         def checksum
           return nil if filename.nil?
           Chef::Digester.checksum_for_file(filename)

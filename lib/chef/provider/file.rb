@@ -347,7 +347,7 @@ class Chef
         end
 
         def contents_changed?(current_resource)
-          !checksum.nil? && checksum != current_resource.checksum
+          checksum != current_resource.checksum
         end
 
         def tempfile
