@@ -36,12 +36,12 @@ class Chef
       attr_accessor :content_strategy
 
       def initialize(new_resource, run_context)
+        @content_strategy ||= ContentFromResource.new(new_resource, run_context)
         super
-        @content_strategy = ContentFromResource.new(new_resource)
       end
 
-      def diff_tempfile(file)
-        diff = DiffService.new(current_resource, file.path)
+      def diff_file(file)
+        diff = DiffService.new(current_resource, file)
         @new_resource.diff( diff.for_new_resource )
         diff.to_s
       end
@@ -110,15 +110,22 @@ class Chef
         end
       end
 
+      # handles both cases of when the file exists and must be backed up, and when it does not and must be created
+      def tempfile_to_destfile
+        backup @new_resource.path if ::File.exists?(@new_resource.path)
+        filename = @content_strategy.filename
+        # touch only when creating a file that does not exist, in order to get default perms right based on umask
+        FileUtils.touch(@new_resource.path) unless ::File.exists?(@new_resource.path)
+        FileUtils.cp(filename, @new_resource.path)
+        @content_strategy.cleanup
+      end
+
       def do_update_file
         description = []
         description << "update content in file #{@new_resource.path} from #{short_cksum(@current_resource.checksum)} to #{short_cksum(@content_strategy.checksum)}"
-        description << diff_tempfile(@content_strategy.tempfile)
+        description << diff_file(@content_strategy.filename)
         converge_by(description) do
-          backup @new_resource.path
-          tempfile = @content_strategy.tempfile
-          ::File.open(@new_resource.path, "w") {|f| f.write IO.read(tempfile.path) }
-          @content_strategy.cleanup
+          tempfile_to_destfile
           Chef::Log.info("#{@new_resource} updated file #{@new_resource.path}")
         end
       end
@@ -127,11 +134,9 @@ class Chef
         description = []
         description << "create new file #{@new_resource.path}"
         description << " with content checksum #{short_cksum(@content_strategy.checksum)}"
-        description << diff_tempfile(@content_strategy.tempfile)
+        description << diff_file(@content_strategy.filename)
         converge_by(description) do
-          tempfile = @content_strategy.tempfile
-          ::File.open(@new_resource.path, "w") {|f| f.write IO.read(tempfile.path) }
-          @content_strategy.cleanup
+          tempfile_to_destfile
           Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
         end
       end
@@ -205,18 +210,19 @@ class Chef
         end
       end
 
-      def deploy_tempfile
-        Tempfile.open(::File.basename(@new_resource.name)) do |tempfile|
-          yield tempfile
-
-          temp_res = Chef::Resource::CookbookFile.new(@new_resource.name)
-          temp_res.path(tempfile.path)
-          ac = Chef::FileAccessControl.new(temp_res, @new_resource, self)
-          ac.set_all!
-          FileUtils.mv(tempfile.path, @new_resource.path)
-        end
-      end
-
+      # FIXME: keep this for mv strategy
+#      def deploy_tempfile
+#        Tempfile.open(::File.basename(@new_resource.name)) do |tempfile|
+#          yield tempfile
+#
+#          temp_res = Chef::Resource::CookbookFile.new(@new_resource.name)
+#          temp_res.path(tempfile.path)
+#          ac = Chef::FileAccessControl.new(temp_res, @new_resource, self)
+#          ac.set_all!
+#          FileUtils.mv(tempfile.path, @new_resource.path)
+#        end
+#      end
+#
       private
 
       def short_cksum(checksum)
@@ -328,56 +334,55 @@ class Chef
   class Provider
     class File
       class ContentStrategy
-        def initialize(new_resource)
+        attr_accessor :run_context
+
+        def initialize(new_resource, run_context)
           @new_resource = new_resource
+          @run_context = run_context
         end
+
         def has_content?
-          raise "class must implement has_content!"
+          # most providers will always have content
+          true
         end
-        def contents_changed?
-          raise "class must implement has_content!"
+
+        def contents_changed?(current_resource)
+          !checksum.nil? && checksum != current_resource.checksum
         end
+
         def tempfile
           raise "class must implement tempfile!"
         end
+
         def checksum
           raise "class must implement checksum!"
         end
+
         def cleanup
           raise "class must implement cleanup!"
         end
       end
 
-      class ContentFromCookbookFile < ContentStrategy
-        def has_content?
-        end
-      end
-
       class ContentFromResource < ContentStrategy
-        include Chef::Mixin::Checksum
         def has_content?
           @new_resource.content != nil
         end
 
-        def tempfile
-          return @tempfile if @tempfile
-
-          @tempfile = Tempfile.open(::File.basename(@new_resource.name))
-          @tempfile.write(@new_resource.content)
-          @tempfile.close
-          @tempfile
-        end
-
-        def contents_changed?(current_resource)
-          checksum != current_resource.checksum
+        def filename
+          @filename ||= begin
+                          @tempfile = Tempfile.open(::File.basename(@new_resource.name))
+                          @tempfile.write(@new_resource.content)
+                          @tempfile.close
+                          @tempfile.path
+                        end
         end
 
         def checksum
-          Chef::Digester.checksum_for_file(tempfile.path)
+          Chef::Digester.checksum_for_file(filename)
         end
 
         def cleanup
-          tempfile.unlink
+          @tempfile.unlink
         end
       end
     end
