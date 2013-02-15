@@ -99,13 +99,14 @@ class Chef
         def filename
           @filename ||= begin
                           cookbook = run_context.cookbook_collection[resource_cookbook]
-                          cookbookpath = cookbook.preferred_filename_on_disk_location(run_context.node, :files, @new_resource.source, @new_resource.path)
-                          if cookbookpath.nil?
+                          file_cache_location = cookbook.preferred_filename_on_disk_location(run_context.node, :files, @new_resource.source, @new_resource.path)
+                          if file_cache_location.nil?
                             nil
                           else
+                            Chef::Log.debug("#{@new_resource} staging #{file_cache_location} to #{@tempfile.path}")
                             @tempfile = Tempfile.open(::File.basename(@new_resource.name))
                             @tempfile.close
-                            FileUtils.cp(cookbookpath, @tempfile.path)
+                            FileUtils.cp(file_cache_location, @tempfile.path)
                             @tempfile.path
                           end
                         end
@@ -121,7 +122,7 @@ class Chef
         end
 
         def cleanup
-          @tempfile.unlink
+          @tempfile.unlink unless @tempfile.nil?
         end
 
         private
