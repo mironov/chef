@@ -16,16 +16,14 @@
 # limitations under the License.
 #
 
-require 'chef/file_access_control'
 require 'chef/provider/file'
-require 'tempfile'
 
 class Chef
   class Provider
     class CookbookFile < Chef::Provider::File
 
       def initialize(new_resource, run_context)
-        @content_strategy = ContentFromCookbookFile.new(new_resource, run_context)
+        @content_strategy = ::Chef::Provider::FileStrategy::ContentFromCookbookFile.new(new_resource, run_context)
         super
       end
 
@@ -88,49 +86,6 @@ class Chef
 #        end
 #      end
 
-    end
-  end
-end
-
-class Chef
-  class Provider
-    class File
-      class ContentFromCookbookFile < ContentStrategy
-        def filename
-          @filename ||= begin
-                          cookbook = run_context.cookbook_collection[resource_cookbook]
-                          file_cache_location = cookbook.preferred_filename_on_disk_location(run_context.node, :files, @new_resource.source, @new_resource.path)
-                          if file_cache_location.nil?
-                            nil
-                          else
-                            @tempfile = Tempfile.open(::File.basename(@new_resource.name))
-                            @tempfile.close
-                            Chef::Log.debug("#{@new_resource} staging #{file_cache_location} to #{@tempfile.path}")
-                            FileUtils.cp(file_cache_location, @tempfile.path)
-                            @tempfile.path
-                          end
-                        end
-        end
-
-        def contents_changed?(current_resource)
-          !checksum.nil? && checksum != current_resource.checksum
-        end
-
-        def checksum
-          return nil if filename.nil?
-          Chef::Digester.checksum_for_file(filename)
-        end
-
-        def cleanup
-          @tempfile.unlink unless @tempfile.nil?
-        end
-
-        private
-
-        def resource_cookbook
-          @new_resource.cookbook || @new_resource.cookbook_name
-        end
-      end
     end
   end
 end

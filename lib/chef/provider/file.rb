@@ -27,6 +27,7 @@ require 'chef/scan_access_control'
 require 'chef/mixin/checksum'
 require 'chef/mixin/diffable_file_resource'
 require 'chef/mixin/backupable_file_resource'
+require 'chef/provider/file_strategies'
 
 class Chef
   class Provider
@@ -39,7 +40,7 @@ class Chef
       attr_accessor :content_strategy
 
       def initialize(new_resource, run_context)
-        @content_strategy ||= ContentFromResource.new(new_resource, run_context)
+        @content_strategy ||= ::Chef::Provider::FileStrategy::ContentFromResource.new(new_resource, run_context)
         super
       end
 
@@ -202,68 +203,6 @@ class Chef
         checksum.slice(0,6)
       end
 
-    end
-  end
-end
-
-class Chef
-  class Provider
-    class File
-      class ContentStrategy
-        attr_accessor :run_context
-
-        def initialize(new_resource, run_context)
-          @new_resource = new_resource
-          @run_context = run_context
-        end
-
-        def has_content?
-          # most providers will always have content
-          true
-        end
-
-        def contents_changed?(current_resource)
-          checksum != current_resource.checksum
-        end
-
-        def filename
-          raise "class must implement filename!"
-        end
-
-        def checksum
-          Chef::Digester.checksum_for_file(filename)
-        end
-
-        def cleanup
-          raise "class must implement cleanup!"
-        end
-      end
-
-      class ContentFromResource < ContentStrategy
-        def has_content?
-          @new_resource.content != nil
-        end
-
-        def filename
-          @filename ||= tempfile.path
-        end
-
-        def cleanup
-          @tempfile.unlink unless @tempfile.nil?
-        end
-
-        private
-
-        def tempfile
-          @tempfile ||= begin
-            tempfile = Tempfile.open(::File.basename(@new_resource.name))
-            tempfile.write(@new_resource.content)
-            tempfile.close
-            tempfile
-          end
-        end
-
-      end
     end
   end
 end
