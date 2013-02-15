@@ -26,55 +26,67 @@ class Chef
   class Provider
     class RemoteFile < Chef::Provider::File
 
+      def initialize(new_resource, run_context)
+        @content_strategy = ContentFromRemoteFile.new(new_resource, run_context)
+        super
+      end
+
       def load_current_resource
         @current_resource = Chef::Resource::RemoteFile.new(@new_resource.name)
         super
       end
 
-      def action_create
-        Chef::Log.debug("#{@new_resource} checking for changes")
+      private
 
-        if current_resource_matches_target_checksum?
-          Chef::Log.debug("#{@new_resource} checksum matches target checksum (#{@new_resource.checksum}) - not updating")
-        else
-          sources = @new_resource.source
-          source = sources.shift
-          begin
-            rest = Chef::REST.new(source, nil, nil, http_client_opts(source))
-            raw_file = rest.streaming_request(rest.create_url(source), {})
-          rescue SocketError, Errno::ECONNREFUSED, Timeout::Error, Net::HTTPFatalError => e
-            Chef::Log.debug("#{@new_resource} cannot be downloaded from #{source}")
-            if source = sources.shift
-              Chef::Log.debug("#{@new_resource} trying to download from another mirror")
-              retry
-            else
-              raise e
-            end
-          end
-          if matches_current_checksum?(raw_file)
-            Chef::Log.debug "#{@new_resource} target and source checksums are the same - not updating"
-          else
-            diff = DiffService.new(current_resource, raw_file.path)
-            @new_resource.diff(diff.for_new_resource)
-            description = []
-            description << "copy file downloaded from #{@new_resource.source} into #{@new_resource.path}"
-            description << diff.to_s
-            converge_by(description) do
-              backup_new_resource
-              FileUtils.cp raw_file.path, @new_resource.path
-              Chef::Log.info "#{@new_resource} updated"
-              raw_file.close!
-            end
-            # whyrun mode cleanup - the temp file will never be used,
-            # so close/unlink it here.
-            if whyrun_mode?
-              raw_file.close!
-            end
-          end
+    end
+  end
+end
+
+class Chef
+  class Provider
+    class File
+      class ContentFromRemoteFile < ContentStrategy
+        def filename
+          @filename ||= begin
+                          Chef::Log.debug("#{@new_resource} checking for changes")
+
+                          if current_resource_matches_target_checksum?
+                            Chef::Log.debug("#{@new_resource} checksum matches target checksum (#{@new_resource.checksum}) - not updating")
+                          else
+                            sources = @new_resource.source
+                            source = sources.shift
+                            begin
+                              rest = Chef::REST.new(source, nil, nil, http_client_opts(source))
+                              raw_file = rest.streaming_request(rest.create_url(source), {})
+                            rescue SocketError, Errno::ECONNREFUSED, Timeout::Error, Net::HTTPFatalError => e
+                              Chef::Log.debug("#{@new_resource} cannot be downloaded from #{source}")
+                              if source = sources.shift
+                                Chef::Log.debug("#{@new_resource} trying to download from another mirror")
+                                retry
+                              else
+                                raise e
+                              end
+                            end
+                          end
+                          raw_file.path unless raw_file.nil?
+                        end
+
         end
-        set_all_access_controls
-        update_new_file_state
-      end
+
+        def contents_changed?(current_resource)
+          !checksum.nil? && checksum != current_resource.checksum
+        end
+
+        def checksum
+          return nil if filename.nil?
+          Chef::Digester.checksum_for_file(filename)
+        end
+
+        def cleanup
+          FileUtils.rm_f(filename) unless filename.nil?
+        end
+
+        private
 
       def current_resource_matches_target_checksum?
         @new_resource.checksum && @current_resource.checksum && @current_resource.checksum =~ /^#{Regexp.escape(@new_resource.checksum)}/
@@ -92,13 +104,6 @@ class Chef
         else
           Chef::Log.debug "#{@new_resource} creating #{@new_resource.path}"
           false
-        end
-      end
-
-      def backup_new_resource
-        if ::File.exists?(@new_resource.path)
-          Chef::Log.debug "#{@new_resource} checksum changed from #{@current_resource.checksum} to #{@new_resource.checksum}"
-          backup @new_resource.path
         end
       end
 
@@ -128,14 +133,14 @@ class Chef
         opts
       end
 
-      private
-
       def absolute_uri?(source)
         URI.parse(source).absolute?
       rescue URI::InvalidURIError
         false
       end
 
+      end
     end
   end
 end
+
