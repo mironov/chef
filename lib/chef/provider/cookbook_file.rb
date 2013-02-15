@@ -60,7 +60,7 @@ class Chef
       # explicit cookbook, use it, otherwise fall back to the implicit cookbook
       # i.e., the cookbook the resource was declared in.
 
-      protected
+#      protected
 
 # TODO: still need this when we implement mv
 #      def enforce_tempfile_inheritance(tempfile_path)
@@ -103,9 +103,9 @@ class Chef
                           if file_cache_location.nil?
                             nil
                           else
-                            Chef::Log.debug("#{@new_resource} staging #{file_cache_location} to #{@tempfile.path}")
                             @tempfile = Tempfile.open(::File.basename(@new_resource.name))
                             @tempfile.close
+                            Chef::Log.debug("#{@new_resource} staging #{file_cache_location} to #{@tempfile.path}")
                             FileUtils.cp(file_cache_location, @tempfile.path)
                             @tempfile.path
                           end
