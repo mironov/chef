@@ -26,6 +26,7 @@ require 'fileutils'
 require 'chef/scan_access_control'
 require 'chef/mixin/checksum'
 require 'chef/mixin/diffable_file_resource'
+require 'chef/mixin/backupable_file_resource'
 
 class Chef
   class Provider
@@ -33,6 +34,7 @@ class Chef
       include Chef::Mixin::EnforceOwnershipAndPermissions
       include Chef::Mixin::Checksum
       include Chef::Mixin::DiffableFileResource
+      include Chef::Mixin::BackupableFileResource
 
       attr_accessor :content_strategy
 
@@ -177,35 +179,6 @@ class Chef
           time = Time.now
           ::File.utime(time, time, @new_resource.path)
           Chef::Log.info("#{@new_resource} updated atime and mtime to #{time}")
-        end
-      end
-
-      def backup(file=nil)
-        file ||= @new_resource.path
-        if @new_resource.backup != false && @new_resource.backup > 0 && ::File.exist?(file)
-          time = Time.now
-          savetime = time.strftime("%Y%m%d%H%M%S")
-          backup_filename = "#{@new_resource.path}.chef-#{savetime}"
-          backup_filename = backup_filename.sub(/^([A-Za-z]:)/, "") #strip drive letter on Windows
-          # if :file_backup_path is nil, we fallback to the old behavior of
-          # keeping the backup in the same directory. We also need to to_s it
-          # so we don't get a type error around implicit to_str conversions.
-          prefix = Chef::Config[:file_backup_path].to_s
-          backup_path = ::File.join(prefix, backup_filename)
-          FileUtils.mkdir_p(::File.dirname(backup_path)) if Chef::Config[:file_backup_path]
-          FileUtils.cp(file, backup_path, :preserve => true)
-          Chef::Log.info("#{@new_resource} backed up to #{backup_path}")
-
-          # Clean up after the number of backups
-          slice_number = @new_resource.backup
-          backup_files = Dir[::File.join(prefix, ".#{@new_resource.path}.chef-*")].sort { |a,b| b <=> a }
-          if backup_files.length >= @new_resource.backup
-            remainder = backup_files.slice(slice_number..-1)
-            remainder.each do |backup_to_delete|
-              FileUtils.rm(backup_to_delete)
-              Chef::Log.info("#{@new_resource} removed backup at #{backup_to_delete}")
-            end
-          end
         end
       end
 
