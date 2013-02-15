@@ -128,6 +128,8 @@ class Chef
           tempfile_to_destfile
           Chef::Log.info("#{@new_resource} updated file #{@new_resource.path}")
         end
+        # the cleanup in the converge_by will not be run in whyrun-mode
+        @content_strategy.cleanup if whyrun_mode?
       end
 
       def do_create_file
@@ -139,6 +141,8 @@ class Chef
           tempfile_to_destfile
           Chef::Log.info("#{@new_resource} created file #{@new_resource.path}")
         end
+        # the cleanup in the converge_by will not be run in whyrun-mode
+        @content_strategy.cleanup if whyrun_mode?
       end
 
       def action_create
@@ -350,12 +354,12 @@ class Chef
           checksum != current_resource.checksum
         end
 
-        def tempfile
+        def filename
           raise "class must implement tempfile!"
         end
 
         def checksum
-          raise "class must implement checksum!"
+          Chef::Digester.checksum_for_file(filename)
         end
 
         def cleanup
@@ -375,10 +379,6 @@ class Chef
                           @tempfile.close
                           @tempfile.path
                         end
-        end
-
-        def checksum
-          Chef::Digester.checksum_for_file(filename)
         end
 
         def cleanup
