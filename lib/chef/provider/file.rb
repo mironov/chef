@@ -1,6 +1,7 @@
 #
 # Author:: Adam Jacob (<adam@opscode.com>)
-# Copyright:: Copyright (c) 2008 Opscode, Inc.
+# Author:: Lamont Granquist (<lamont@opscode.com>)
+# Copyright:: Copyright (c) 2008-2013 Opscode, Inc.
 # License:: Apache License, Version 2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -228,8 +229,6 @@ class Chef
         checksum.slice(0,6)
       end
 
-      class BackupService
-      end
     end
   end
 end
@@ -255,7 +254,7 @@ class Chef
         end
 
         def filename
-          raise "class must implement tempfile!"
+          raise "class must implement filename!"
         end
 
         def checksum
@@ -273,17 +272,24 @@ class Chef
         end
 
         def filename
-          @filename ||= begin
-                          @tempfile = Tempfile.open(::File.basename(@new_resource.name))
-                          @tempfile.write(@new_resource.content)
-                          @tempfile.close
-                          @tempfile.path
-                        end
+          @filename ||= tempfile.path
         end
 
         def cleanup
-          @tempfile.unlink
+          @tempfile.unlink unless @tempfile.nil?
         end
+
+        private
+
+        def tempfile
+          @tempfile ||= begin
+            tempfile = Tempfile.open(::File.basename(@new_resource.name))
+            tempfile.write(@new_resource.content)
+            tempfile.close
+            tempfile
+          end
+        end
+
       end
     end
   end
