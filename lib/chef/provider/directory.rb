@@ -33,16 +33,10 @@ class Chef
 
       def load_current_resource
         @current_resource = Chef::Resource::Directory.new(@new_resource.name)
-        @current_resource.path(@new_resource.path)
-        setup_acl
-
-        @current_resource
+        super
       end
 
       def define_resource_requirements
-        # this must be evaluated before whyrun messages are printed
-        access_controls.requires_changes?
-
         requirements.assert(:create) do |a|
           # Make sure the parent dir exists, or else fail.
           # for why run, print a message explaining the potential error.
@@ -107,8 +101,8 @@ class Chef
             Chef::Log.info("#{@new_resource} created directory #{@new_resource.path}")
           end
         end
-        set_all_access_controls
-        update_new_file_state
+        do_acl_changes
+        load_resource_attributes_from_file(@new_resource)
       end
 
       def action_delete

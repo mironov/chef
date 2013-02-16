@@ -1,4 +1,4 @@
-#
+#c
 # Author:: Adam Jacob (<adam@opscode.com>)
 # Author:: Lamont Granquist (<lamont@opscode.com>)
 # Copyright:: Copyright (c) 2008-2013 Opscode, Inc.
@@ -103,7 +103,6 @@ class Chef
           converge_by(access_controls.describe_changes) do
             access_controls.set_all
             # update the @new_resource to have the correct new values for reporting (@new_resource == actual "end state" here)
-            load_resource_attributes_from_file(@new_resource)
           end
         end
       end
@@ -154,6 +153,7 @@ class Chef
           end
         end
         do_acl_changes
+        load_resource_attributes_from_file(@new_resource)
       end
 
       def action_create_if_missing

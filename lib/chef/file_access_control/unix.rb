@@ -62,7 +62,7 @@ class Chef
       # target_uid.nil? means the new_resource.owner is nil and the requesting owner doesn't care
       # current_uid.nil? means the file does not exist
       def should_update_owner?
-        current_uid.nil? || ( !target_uid.nil? && target_uid != current_uid )
+        !target_uid.nil? && ( current_uid.nil? || target_uid != current_uid )
       end
 
       def set_owner!
@@ -105,7 +105,7 @@ class Chef
       end
 
       def should_update_group?
-        current_gid.nil? || (!target_gid.nil? && target_gid != current_gid)
+        !target_gid.nil? && ( current_gid.nil? || target_gid != current_gid )
       end
 
       def set_group!
@@ -138,7 +138,7 @@ class Chef
       end
 
       def should_update_mode?
-        current_mode.nil? || ( !target_mode.nil? && current_mode != target_mode )
+        !target_mode.nil? && ( current_mode.nil? || current_mode != target_mode )
       end
 
       def set_mode!

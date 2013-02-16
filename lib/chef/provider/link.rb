@@ -112,7 +112,13 @@ class Chef
         end
         if @new_resource.link_type == :symbolic
           if access_controls.requires_changes?
-            converge_by(access_controls.describe_changes) do 
+            puts "NEW RESOURCE: "
+            puts @new_resource.to_text
+            puts "CURRENT RESOURCE: "
+            puts @current_resource.to_text
+            system "ls -la #{@new_resource.path}"
+            puts "REQUIRES CHANGES"
+            converge_by(access_controls.describe_changes) do
               access_controls.set_all
             end
           end
